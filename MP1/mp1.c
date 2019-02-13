@@ -8,8 +8,14 @@
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
+#include <asm/uaccess.h>
+
 
 #include <linux/slab.h>
+#include <linux/workqueue.h>
+#include <linux/time.h>
+#include <linux/spinlock.h>
+
 #include <linux/list.h>
 #include <linux/jiffies.h>
 

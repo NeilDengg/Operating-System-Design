@@ -36,6 +36,61 @@ static struct workqueue_struct *mp1_workqueue;
 static spinlock_t mp1_lock;
 static struct work_struct *mp1_work;
 
+static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *data)
+{
+    unsigned long copied = 0;
+    char *buf;
+    proc_list *tmp;
+    unsigned long flags;
+
+    buf = (char *)kmalloc(count, GFP_KERNEL);
+
+    // enter critical section
+    spin_lock_irqsave(&mp1_lock, flags);
+    list_for_each_entry(tmp, &mp1_proc_list, list) {
+        copied += sprintf(buf + copied, "%u: %u\n", tmp->pid, jiffies_to_msecs(cputime_to_jiffies(tmp->cpu_time)));
+    }
+    spin_unlock_irqrestore(&mp1_lock, flags);
+
+    buf[copied] = '\0';
+
+    copy_to_user(buffer, buf, copied);
+
+    kfree(buf);
+
+    return copied;
+}
+
+static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *data)
+{
+    proc_list *tmp;
+    unsigned long flags;
+    char *buf;
+
+    // initialize tmp->list
+    tmp = (proc_list *)kmalloc(sizeof(proc_list), GFP_KERNEL);
+    INIT_LIST_HEAD(&(tmp->list));
+
+    // set tmp->pid
+    buf = (char *)kmalloc(count + 1, GFP_KERNEL);
+    copy_from_user(buf, buffer, count);
+    buf[count] = '\0';
+    sscanf(buf, "%u", &tmp->pid);
+
+    // initial tmp->cpu_time
+    tmp->cpu_time = 0;
+
+    // add tmp to mp1_proc_list
+    spin_lock_irqsave(&mp1_lock, flags);
+    list_add(&(tmp->list), &mp1_proc_list);
+    spin_unlock_irqrestore(&mp1_lock, flags);
+
+    kfree(buf);
+
+    return count;
+}
+
+
 static const struct file_operations mp1_fops = {
     .owner   = THIS_MODULE,
     .read    = mp1_read,
@@ -62,7 +117,7 @@ static void mp1_work_function(struct work_struct *work)
     }
     spin_unlock_irqrestore(&mp1_lock, flags);
 
-    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEINTERVAL));
+    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(INTERVAL));
 }
 
 // mp1_init - Called when module is loaded
@@ -83,12 +138,12 @@ int __init mp1_init(void)
    mp1_workqueue = create_workqueue("mp1_workqueue");
    mp1_work = (struct work_struct *)kmalloc(sizeof(struct work_struct), GFP_KERNEL);
     
-   // initialize lize workqueue
+   // initialize workqueue
    INIT_WORK(mp1_work, mp1_work_function);
 
    // set and start timer
    setup_timer(&mp1_timer, mp1_timer_callback, 0);
-   mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEINTERVAL));
+   mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(INTERVAL));
 
    // initialize lock
    spin_lock_init(&mp1_lock);

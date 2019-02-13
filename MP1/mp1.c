@@ -41,29 +41,34 @@ static struct workqueue_struct *mp1_workqueue;
 static spinlock_t mp1_lock;
 static struct work_struct *mp1_work;
 
-static ssize_t mp1_read(struct file *file, char __user *buffer, size_t count, loff_t *data)
+static ssize_t mp1_read (struct file *file, char __user *buffer, size_t count, loff_t *data)
 {
-    unsigned long copied = 0;
-    char *buf;
-    proc_list *tmp;
-    unsigned long flags;
+  printk(KERN_ALERT "read function is called!!! %d", *data);
+  if(*data>0)
+    return 0;
 
-    buf = (char *)kmalloc(count, GFP_KERNEL);
+  int copied = 0;
+  char * buf;
+  struct mp1_list *entry;
+  int offset = 0;
 
-    // enter critical section
-    spin_lock_irqsave(&mp1_lock, flags);
-    list_for_each_entry(tmp, &mp1_proc_list, list) {
-        copied += sprintf(buf + copied, "%u: %u\n", tmp->pid, jiffies_to_msecs(cputime_to_jiffies(tmp->cpu_time)));
-    }
-    spin_unlock_irqrestore(&mp1_lock, flags);
-
-    buf[copied] = '\0';
-
-    copy_to_user(buffer, buf, copied);
-
-    kfree(buf);
-
-    return copied;
+  buf = (char *) kmalloc(2048,GFP_KERNEL); 
+  // critical section begin
+  spin_lock(&mylock);
+  list_for_each_entry(entry, &head, list) {
+    char temp[256];
+    sprintf(temp, "%lu: %lu ms\n", entry->pid, jiffies_to_msecs(entry->cpu_time));
+    strcpy(buf + offset, temp);
+    offset = strlen(buf);
+  }
+  spin_unlock(&mylock);
+  // critical section end
+  copied = strlen(buf)+1;
+  copy_to_user(buffer, buf, copied);
+  kfree(buf);
+  printk(KERN_ALERT "READ COUNT COPIED %d\t%d\n", count, copied);
+  *data += copied;
+  return copied;
 }
 
 static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t count, loff_t *data)

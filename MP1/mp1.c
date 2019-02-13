@@ -11,19 +11,17 @@
 
 #include <linux/slab.h>
 #include <linux/list.h>
-#include <linux/uaccess.h>
 #include <linux/jiffies.h>
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("059");
+MODULE_AUTHOR("16");
 MODULE_DESCRIPTION("CS-423 MP1");
 
-#define DEBUG 1
-#define DIRECTORY "mp1"
-#define FILE "status"
-#define INTERVAL 5000
+#define DEBUG          1
+#define FILENAME       "status"
+#define DIRECTORY      "mp1"
+#define TIMEINTERVAL   5000
 
-// define struct proc_list
 typedef struct {
     struct list_head list;
     unsigned int pid;
@@ -91,7 +89,6 @@ static ssize_t mp1_write(struct file *file, const char __user *buffer, size_t co
     return count;
 }
 
-
 static const struct file_operations mp1_fops = {
     .owner   = THIS_MODULE,
     .read    = mp1_read,
@@ -107,6 +104,7 @@ static void mp1_work_function(struct work_struct *work)
 {
     unsigned long flags;
     proc_list *pos, *n;
+
     // enter critical section
     spin_lock_irqsave(&mp1_lock, flags);
     list_for_each_entry_safe(pos, n, &mp1_proc_list, list) {
@@ -118,74 +116,82 @@ static void mp1_work_function(struct work_struct *work)
     }
     spin_unlock_irqrestore(&mp1_lock, flags);
 
-    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(INTERVAL));
+    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEINTERVAL));
 }
 
 // mp1_init - Called when module is loaded
-int __init mp1_init(void)
+static int __init mp1_init(void)
 {
-   #ifdef DEBUG
-   printk(KERN_ALERT "MP1 MODULE LOADING\n");
-   #endif
-   // Insert your code here ...
-   
-   // create directory: proc/mp1
-   proc_dir = proc_mkdir(DIRECTORY, NULL);
+    #ifdef DEBUG
+    printk(KERN_ALERT "MP1 MODULE LOADING\n");
+    #endif
+    // Insert your code here ...
 
-   // create file: proc/mp1/status
-   proc_entry = proc_create(FILE, 0666, proc_dir, &mp1_fops);
-   
-   // create workqueue and allocate memory for work
-   mp1_workqueue = create_workqueue("mp1_workqueue");
-   mp1_work = (struct work_struct *)kmalloc(sizeof(struct work_struct), GFP_KERNEL);
-    
-   // initialize workqueue
-   INIT_WORK(mp1_work, mp1_work_function);
+    // create /proc/mp1
+    if ((proc_dir = proc_mkdir(DIRECTORY, NULL)) == NULL) {
+        printk(KERN_INFO "proc_mkdir ERROR\n");
+        return -ENOMEM;
+    }
+    // create /proc/mp1/status
+    if ((proc_entry = proc_create(FILENAME, 0666, proc_dir, &mp1_fops)) == NULL) {
+        remove_proc_entry(DIRECTORY, NULL);
+        printk(KERN_INFO "proc_create ERROR\n");
+        return -ENOMEM;
+    }
 
-   // set and start timer
-   setup_timer(&mp1_timer, mp1_timer_callback, 0);
-   mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(INTERVAL));
+    // initialize and start timer
+    setup_timer(&mp1_timer, mp1_timer_callback, 0);
+    mod_timer(&mp1_timer, jiffies + msecs_to_jiffies(TIMEINTERVAL));
 
-   // initialize lock
-   spin_lock_init(&mp1_lock);
+    // initialize workqueue
+    if ((mp1_workqueue = create_workqueue("mp1_workqueue")) == NULL) {
+        printk(KERN_INFO "create_workqueue ERROR\n");
+        return -ENOMEM;
+    }
 
-   printk(KERN_ALERT "MP1 MODULE LOADED\n");
-   return 0;   
+    // initialize work
+    mp1_work = (struct work_struct *)kmalloc(sizeof(struct work_struct), GFP_KERNEL);
+    INIT_WORK(mp1_work, mp1_work_function);
+
+    // initialize lock
+    spin_lock_init(&mp1_lock);
+
+    printk(KERN_ALERT "MP1 MODULE LOADED\n");
+    return 0;
 }
 
 // mp1_exit - Called when module is unloaded
-void __exit mp1_exit(void)
+static void __exit mp1_exit(void)
 {
-   #ifdef DEBUG
-   printk(KERN_ALERT "MP1 MODULE UNLOADING\n");
-   #endif
-   // Insert your code here ...
-   
-   proc_list *pos, *n;
+    proc_list *pos, *n;
 
-   // remove file 
-   remove_proc_entry(FILE, proc_dir);
-   
-   // remove directory
-   remove_proc_entry(DIRECTORY, NULL);
-   
-   // to avoid list broken, use safe function to free mp1_proc_list
-   list_for_each_entry_safe(pos, n, &mp1_proc_list, list) {
-        list_del(&pos->list);
-        kfree(pos);
-    }
+    #ifdef DEBUG
+    printk(KERN_ALERT "MP1 MODULE UNLOADING\n");
+    #endif
+    // Insert your code here ...
 
-	// free workqueue
-	flush_workqueue(mp1_workqueue);
-	destroy_workqueue(mp1_workqueue);
-
-    // free work
-    kfree(mp1_work);
+    // remove /proc/mp1/status
+    remove_proc_entry(FILENAME, proc_dir);
+    // remove /proc/mp1
+    remove_proc_entry(DIRECTORY, NULL);
 
     // free timer
     del_timer_sync(&mp1_timer);
 
-   printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
+    // free mp1_proc_list
+    list_for_each_entry_safe(pos, n, &mp1_proc_list, list) {
+        list_del(&pos->list);
+        kfree(pos);
+    }
+
+    // free workqueue
+    flush_workqueue(mp1_workqueue);
+    destroy_workqueue(mp1_workqueue);
+
+    // free work
+    kfree(mp1_work);
+
+    printk(KERN_ALERT "MP1 MODULE UNLOADED\n");
 }
 
 // Register init and exit funtions

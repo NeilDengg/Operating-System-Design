@@ -11,6 +11,7 @@
 
 #include <linux/slab.h>
 #include <linux/list.h>
+#include <linux/uaccess.h>
 #include <linux/jiffies.h>
 
 MODULE_LICENSE("GPL");
@@ -132,7 +133,7 @@ int __init mp1_init(void)
    proc_dir = proc_mkdir(DIRECTORY, NULL);
 
    // create file: proc/mp1/status
-   proc_entry = proc_create(FILENAME, 0666, proc_dir, &mp1_fops);
+   proc_entry = proc_create(FILE, 0666, proc_dir, &mp1_fops);
    
    // create workqueue and allocate memory for work
    mp1_workqueue = create_workqueue("mp1_workqueue");
@@ -161,7 +162,7 @@ void __exit mp1_exit(void)
    // Insert your code here ...
    
    proc_list *pos, *n;
-   
+
    // remove file 
    remove_proc_entry(FILE, proc_dir);
    

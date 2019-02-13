@@ -160,6 +160,8 @@ void __exit mp1_exit(void)
    #endif
    // Insert your code here ...
    
+   proc_list *pos, *n;
+   
    // remove file 
    remove_proc_entry(FILE, proc_dir);
    

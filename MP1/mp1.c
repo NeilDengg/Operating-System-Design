@@ -160,7 +160,7 @@ static const struct file_operations mp1_file = {
   .read = mp1_read,
   .write = mp1_write,
 };
-https://github.com/NeilDengg/Operating-System-Design.git
+
 /**
 mp1_init - Called when module is loaded
 create proc directory and file

@@ -60,8 +60,8 @@ Return: number of bytes read
 static ssize_t mp1_read (struct file *file, char __user *buffer, size_t count, loff_t *data)
 {
   printk(KERN_ALERT "read function is called!!! %d", *data);
-  if(*data>0)
-    return 0;
+  // if(*data>0)
+  //   return 0;
 
   unsigned long copied = 0;
   char * buf;
@@ -70,20 +70,30 @@ static ssize_t mp1_read (struct file *file, char __user *buffer, size_t count, l
 
   buf = (char *) kmalloc(count,GFP_KERNEL); 
   // enter critical section
+
   spin_lock(&mp1_lock);
+  
   list_for_each_entry(tmp, &head_proc_list, list) {
     char temp[256];
     sprintf(temp, "%lu: %lu ms\n", tmp->pid, jiffies_to_msecs(tmp->cpu_time));
     strcpy(buf + offset, temp);
     offset = strlen(buf);
   }
+
   spin_unlock(&mp1_lock);
+  
   // critical section end
+  
   copied = strlen(buf)+1;
+  
   copy_to_user(buffer, buf, copied);
+  
   kfree(buf);
+  
   printk(KERN_ALERT "READ COUNT COPIED %d\t%d\n", count, copied);
+  
   *data += copied;
+  
   return copied;
 }
 
@@ -93,31 +103,36 @@ Initiate a new block and add it to the linked list
 */
 static ssize_t mp1_write (struct file *file, const char __user *buffer, size_t count, loff_t *data)
 {
-  int copied;
-  struct proc_list* new_node;
+  int copied = 0;
+  struct proc_list* tmp;
   char * buf;
+
+  // Initialize tmplist
+  tmp  = kmalloc(sizeof(struct proc_list), GFP_KERNEL);
+  INIT_LIST_HEAD(&tmp->list);
+
+
+
   buf = (char *) kmalloc(count+1,GFP_KERNEL); 
-  copied = 0;
   copy_from_user(buf, buffer, count);
   buf[count] = '\0';
-  new_node  = kmalloc(sizeof(struct proc_list), GFP_KERNEL);
-
-  if(kstrtol(buf, 10, &(new_node->pid)))
-  {
-    int i = 0;
-    while( buf[i] != '\0' )
-    {
-      printk("ERROR STR TO LONG: %x\n", *(buf+i));
-      i++;
-    }
-  }
-  printk("PID AT BEGINNING %d \n", new_node->pid);
-  printk("PID: %d\n", new_node->pid);
-  new_node->cpu_time = 1337;
-  INIT_LIST_HEAD(&new_node->list);
+  sscanf(buf,"%u",&tmp->pid);
+  printk("buf is %s",buf);
+  //   if(kstrtol(buf, 10, &(tmp->pid)))
+  // {
+  //   int i = 0;
+  //   while( buf[i] != '\0' )
+  //   {
+  //     printk("ERROR STR TO LONG: %x\n", *(buf+i));
+  //     i++;
+  //   }
+  // }
+  printk("PID AT BEGINNING %d \n", tmp->pid);
+  printk("PID: %d\n", tmp->pid);
+  tmp->cpu_time = 1337;
   // critical section begin
   spin_lock(&mp1_lock);
-  list_add(&new_node->list, &head_proc_list);
+  list_add(&tmp->list, &head_proc_list);
   spin_unlock(&mp1_lock);
   // critical section end
   printk("%d \n", ((struct mp1_list*)head_proc_list.next)->cpu_time);
@@ -126,15 +141,21 @@ static ssize_t mp1_write (struct file *file, const char __user *buffer, size_t c
   return count;
 }
 
+static const struct file_operations mp1_file = {
+  .owner = THIS_MODULE, 
+  .read = mp1_read,
+  .write = mp1_write,
+};
+
 /**
 Top half interrupt:
 setup up a mp1_timer for 5 seconds and put the bottom half on the workqueue
 */
-void _timer_callback( unsigned long data )
+void mp1_timer_callback( unsigned long data )
 {
-    setup_timer( &mp1_timer, _timer_callback, 0 );
+    // setup_timer( &mp1_timer, mp1_timer_callback, 0 );
     queue_work(mp1_q, &mp1_work);
-    mod_timer( &mp1_timer, jiffies + msecs_to_jiffies(5000) );
+    // mod_timer( &mp1_timer, jiffies + msecs_to_jiffies(5000) );
 }
 
 /**
@@ -151,27 +172,22 @@ static void bottom_fn(void *ptr)
   list_for_each_entry_safe(tmp,temp_entry, &head_proc_list, list) 
   {
     unsigned long cpu_value;
-    if(!get_cpu_use(tmp->pid, &cpu_value))
-    {
-      //success
-      tmp->cpu_time = cpu_value;
-      printk("RECORDED CPU TIME FOR PID %d: %d\n", tmp->pid, jiffies_to_msecs(tmp->cpu_time));
-    }
-    else  // job finished, remove from linked list 
+    if(get_cpu_use(tmp->pid, &cpu_value)==-1)
+    // {
+    //   //success
+    //   tmp->cpu_time = cpu_value;
+    //   printk("RECORDED CPU TIME FOR PID %d: %d\n", tmp->pid, jiffies_to_msecs(tmp->cpu_time));
+    // }
+    // else  // job finished, remove from linked list 
     {
       list_del(&(tmp->list));
       printk("ERROR: CAN'T GET CPU USE FOR PID: %d, So this process is now being deleted\n", tmp->pid);
     }
   }
   spin_unlock(&mp1_lock);
+  mod_timer( &mp1_timer, jiffies + msecs_to_jiffies(5000) );
   // critical section end
 }
-
-static const struct file_operations mp1_file = {
-  .owner = THIS_MODULE, 
-  .read = mp1_read,
-  .write = mp1_write,
-};
 
 /**
 mp1_init - Called when module is loaded
@@ -187,7 +203,7 @@ int __init mp1_init(void)
   proc_dir =  proc_mkdir("mp1",NULL);
   proc_create("status",0666, proc_dir, &mp1_file);  
   spin_lock_init(&mp1_lock);
-  setup_timer( &mp1_timer, _timer_callback, 0 ); 
+  setup_timer( &mp1_timer, mp1_timer_callback, 0 ); 
   mod_timer( &mp1_timer, jiffies + msecs_to_jiffies(5000) ); 
   
   mp1_q = create_workqueue("mp_queue");

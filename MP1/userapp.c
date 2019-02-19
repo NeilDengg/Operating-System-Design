@@ -1,8 +1,28 @@
 #include "userapp.h"
+#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>	
+void factorial (int fact){
 
-void factorial (int);
-void call_kernel();
+	int val =1;
+	while(fact--!=0){
+		val *= fact ;
+	}
+}
 
+void call_kernel (){
+
+	printf("\n=====This is the calling kernel starts and read, update the time.\n");
+	FILE *f = fopen ("/proc/mp1/status", "r");
+	int size_buffer = 2048;
+	char * buffer = (char*)malloc(size_buffer);
+	ssize_t read_bytes = read (fileno(f), (void*)buffer, size_buffer);
+	buffer[read_bytes-1]='\0';
+	
+	printf("The read stuff is:\n%s", buffer); 		
+	fclose(f);
+}
 
 int main(int argc, char* argv[])
 {
@@ -34,25 +54,8 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void factorial (int fact){
-
-	int val =1;
-	while(fact--!=0){
-		val *= fact ;
-	}
-}
 
 
-void call_kernel (){
 
-	printf("\n=====This is the calling kernel starts and read, update the time.\n");
-	FILE *f = fopen ("/proc/mp1/status", "r");
-	int size_buffer = 2048;
-	char * buffer = (char*)malloc(size_buffer);
-	ssize_t read_bytes = read (fileno(f), (void*)buffer, size_buffer);
-	buffer[read_bytes-1]='\0';
-	
-	printf("The read stuff is:\n%s", buffer); 		
-	fclose(f);
-}
+
 
